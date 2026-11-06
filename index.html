@@ -1,0 +1,199 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QuantumOS</title>
+<style>
+  :root{--bg:#0b0d12;--panel:#141821;--line:#232936;--txt:#e8ecf5;--dim:#8b95a8;--acc:#5b8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);min-height:100vh;
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+  h1{font-size:16px;font-weight:600;margin:0;letter-spacing:.5px}
+  h1 span{color:var(--acc)}
+  #search{margin-left:auto;width:min(320px,45vw);padding:8px 12px;font:inherit;
+          background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px}
+  #search:focus{outline:1px solid var(--acc)}
+  main{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;
+       padding:22px;max-width:1100px;margin:0 auto}
+  .tile{position:relative;padding:16px 8px 12px;text-align:center;cursor:pointer;
+        background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        user-select:none;transition:.15s}
+  .tile:hover,.tile:focus{background:#1b2130;border-color:var(--acc);transform:translateY(-2px);outline:none}
+  .tile .ico{display:block;font-size:24px;margin-bottom:6px}
+  .tile .nm{font-size:12px;color:var(--dim)}
+  .tile.emb .nm{color:var(--txt)}
+  .tile .ext{position:absolute;top:3px;right:7px;font-size:11px;color:var(--dim);
+             opacity:0;transition:.15s;text-decoration:none}
+  .tile:hover .ext,.tile:focus .ext{opacity:1}
+  .tile .ext:hover{color:var(--acc)}
+  #viewer{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;
+          padding:18px;background:rgba(0,0,0,.72)}
+  #viewer[hidden]{display:none}
+  .shell{display:flex;flex-direction:column;overflow:hidden;width:min(1000px,100%);
+         height:min(80vh,760px);background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  .bar{display:flex;align-items:center;gap:10px;padding:10px 14px;
+       border-bottom:1px solid var(--line);font-size:13px}
+  .bar a{color:var(--acc);text-decoration:none}
+  .bar .x{margin-left:auto;padding:0 4px;font-size:18px;cursor:pointer;
+          background:none;border:0;color:var(--dim)}
+  .bar .x:hover{color:var(--txt)}
+  iframe{flex:1;width:100%;border:0;background:#000}
+  .msg{flex:1;display:flex;flex-direction:column;gap:8px;align-items:center;
+       justify-content:center;padding:24px;text-align:center;color:var(--dim);font-size:14px}
+  .msg code{padding:2px 6px;border-radius:5px;background:#0b0d12;color:var(--txt)}
+  footer{padding:0 22px 26px;text-align:center;font-size:12px;color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Quantum<span>OS</span></h1>
+  <input id="search" placeholder="Search DuckDuckGo →" autocomplete="off">
+</header>
+
+<main id="grid"></main>
+
+<div id="viewer" hidden>
+  <div class="shell">
+    <div class="bar">
+      <b id="vTitle"></b>
+      <a id="vOpen" target="_blank" rel="noopener">open ↗</a>
+      <button class="x" id="vClose" aria-label="Close">✕</button>
+    </div>
+    <div id="vBody"></div>
+  </div>
+</div>
+
+<footer>Embeds show one item each. Anything else opens in a new tab.</footer>
+
+<script>
+/* ============================================================
+   EDIT THESE. Leave a value empty ("") to disable that embed.
+   ============================================================ */
+const CONFIG = {
+  youtube:   "",              // video id, e.g. "dQw4w9WgXcQ"
+  tiktok:    "",              // video id from the URL  .../video/1234567890
+  spotify:   "",              // track / album / playlist id
+  spotifyKind: "playlist",    // "track" | "album" | "playlist"
+  twitch:    "",              // channel name, e.g. "shroud"
+  discord:   "",              // server id (Server Settings > Widget > enable)
+  reddit:    "",              // subreddit name, no r/
+  instagram: "",              // post code from /p/CODE/
+  maps:      "London"         // any place or address
+};
+
+/* ---- officially embeddable URLs ---- */
+const EMBEDS = {
+  youtube:   id => id && "https://www.youtube.com/embed/" + id,
+  tiktok:    id => id && "https://www.tiktok.com/embed/v2/" + id,
+  spotify:   id => id && "https://open.spotify.com/embed/" + CONFIG.spotifyKind + "/" + id,
+  twitch:    id => {
+               if (!id || !location.hostname) return null;
+               return "https://player.twitch.tv/?channel=" + encodeURIComponent(id)
+                    + "&parent=" + location.hostname;
+             },
+  discord:   id => id && "https://discord.com/widget?id=" + id + "&theme=dark",
+  reddit:    id => id && "https://www.redditmedia.com/r/" + id + "/?embed=true",
+  instagram: id => id && "https://www.instagram.com/p/" + id + "/embed",
+  maps:      q  => q && "https://maps.google.com/maps?q=" + encodeURIComponent(q) + "&output=embed"
+};
+
+/* ---- the tiles ---- */
+const TILES = [
+  { key:"youtube",   name:"YouTube",   ico:"▶",  url:"https://youtube.com"      },
+  { key:"tiktok",    name:"TikTok",    ico:"🎵", url:"https://tiktok.com"       },
+  { key:"spotify",   name:"Spotify",   ico:"♫",  url:"https://open.spotify.com" },
+  { key:"twitch",    name:"Twitch",    ico:"🎮", url:"https://twitch.tv"        },
+  { key:"reddit",    name:"Reddit",    ico:"👽", url:"https://reddit.com"       },
+  { key:"instagram", name:"Instagram", ico:"📷", url:"https://instagram.com"    },
+  { key:"discord",   name:"Discord",   ico:"💬", url:"https://discord.com"      },
+  { key:"maps",      name:"Maps",      ico:"🗺",  url:"https://maps.google.com"  },
+  {                   name:"Google",   ico:"🔍", url:"https://google.com"       },
+  {                   name:"Chess",    ico:"♞",  url:"https://chess.com"        },
+  {                   name:"GeoGuessr",ico:"🌍", url:"https://geoguessr.com"    },
+  {                   name:"Slither",  ico:"🐍", url:"https://slither.io"       }
+];
+
+/* ---- render ---- */
+const grid = document.getElementById("grid");
+TILES.forEach(t => {
+  const el = document.createElement("div");
+  el.className = "tile" + (t.key && EMBEDS[t.key] ? " emb" : "");
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  el.innerHTML = '<span class="ico">' + t.ico + '</span>'
+               + '<span class="nm">' + t.name + '</span>'
+               + '<a class="ext" target="_blank" rel="noopener" title="Open in new tab">↗</a>';
+  el.querySelector(".ext").href = t.url;
+  el.querySelector(".ext").onclick = e => e.stopPropagation();
+  el.onclick = () => go(t);
+  el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(t); } };
+  grid.appendChild(el);
+});
+
+function go(t) {
+  if (t.key && EMBEDS[t.key]) {
+    const src = EMBEDS[t.key](CONFIG[t.key]);
+    if (src) return openViewer(t, src);
+  }
+  window.open(t.url, "_blank", "noopener");
+}
+
+/* ---- viewer ---- */
+const viewer = document.getElementById("viewer");
+const vBody  = document.getElementById("vBody");
+const vTitle = document.getElementById("vTitle");
+const vOpen  = document.getElementById("vOpen");
+
+function openViewer(t, src) {
+  vTitle.textContent = t.name;
+  vOpen.href = t.url;
+  vBody.innerHTML = "";
+  const f = document.createElement("iframe");
+  f.src = src;
+  f.allow = "fullscreen; encrypted-media; picture-in-picture; autoplay";
+  f.allowFullscreen = true;
+  f.referrerPolicy = "origin";
+  f.title = t.name;
+  vBody.appendChild(f);
+  viewer.hidden = false;
+}
+
+/* clicked a tile that supports embeds but has no ID yet */
+function openEmpty(t, key) {
+  vTitle.textContent = t.name;
+  vOpen.href = t.url;
+  vBody.innerHTML = '<div class="msg">No ID set for <b>' + t.name + '</b>.<br>'
+    + 'Add <code>' + key + '</code> in the CONFIG block at the top of the file.</div>';
+  viewer.hidden = false;
+}
+
+/* patch go() so missing IDs explain themselves instead of opening a tab */
+const goBase = go;
+go = function (t) {
+  if (t.key && EMBEDS[t.key] && !CONFIG[t.key]) return openEmpty(t, t.key);
+  return goBase(t);
+};
+
+document.getElementById("vClose").onclick = close;
+viewer.onclick = e => { if (e.target === viewer) close(); };
+addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+function close() { viewer.hidden = true; vBody.innerHTML = ""; }
+
+/* ---- search ---- */
+document.getElementById("search").onkeydown = e => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value.trim();
+  if (!q) return;
+  const looksLikeUrl = /^(https?:\/\/|[\w-]+\.(com|org|net|io|dev|gg|tv|co))/i.test(q);
+  window.open(looksLikeUrl ? (/^https?:/i.test(q) ? q : "https://" + q)
+                           : "https://duckduckgo.com/?q=" + encodeURIComponent(q),
+              "_blank", "noopener");
+};
+</script>
+</body>
+</html>
+Want me to pre-fill a couple of the IDs (a default YouTube video, a public Spotify playlist) so it feels alive on first load?
